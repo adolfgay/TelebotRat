@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<!-- тут все ИИ -->
+<html>
+<head>
+    <title>WebSocket Audio Client</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
+        h1 { color: #555; }
+        button { padding: 10px 15px; margin: 5px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em; }
+        #connectBtn { background-color: #5cb85c; color: white; }
+        #disconnectBtn { background-color: #d9534f; color: white; }
+        button:disabled { background-color: #cccccc; cursor: not-allowed; }
+        #status { margin-top: 15px; padding: 10px; background-color: #e9e9e9; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Audio Streaming Client</h1>
+
+    <button id="connectBtn">Connect</button>
+    <button id="disconnectBtn" disabled>Disconnect</button>
+
+    <div id="status">Status: Not connected</div>
+
+    <script>
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const statusDiv = document.getElementById('status');
+
+        // Формируем URL для WebSocket
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws`; // Используем путь /ws
+
+        let ws = null;
+        let audioContext = null;
+        let audioQueue = [];
+        let isPlaying = false;
+        let sourceNode = null; // Для возможности остановки
+        let nextPlayTime = 0; // Для более гладкого воспроизведения
+        const bufferTargetDuration = 0.2; // Целевая длительность буфера в секундах (200 мс)
+        let currentBufferDuration = 0; // Текущая накопленная длительность в буфере
+
+        connectBtn.onclick = connect;
+        disconnectBtn.onclick = disconnect;
+
+        function updateStatus(text, isError = false) {
+            console.log(text);
+            statusDiv.textContent = 'Status: ' + text;
+            statusDiv.style.color = isError ? 'red' : 'black';
+        }
+
+        function connect() {
+            if (ws) {
+                updateStatus("Already connected or connecting.");
+                return;
+            }
+            updateStatus(`Connecting to ${wsUrl}...`);
+
+            ws = new WebSocket(wsUrl);
+            ws.binaryType = "arraybuffer";
+
+            ws.onopen = () => {
+                updateStatus('Connected');
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+                initAudio();
+            };
+
+            ws.onclose = (event) => {
+                updateStatus(`Disconnected (Code: ${event.code})`);
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                stopAudio(); // Останавливаем звук при дисконнекте
+            };
+
+            ws.onmessage = (event) => {
+                if (event.data instanceof ArrayBuffer) {
+                    enqueueAudio(event.data);
+                } else {
+                    console.log("Received non-binary message:", event.data);
+                }
+            };
+
+            ws.onerror = (error) => {
+                updateStatus('WebSocket Error. See console for details.', true);
+                console.error("WebSocket Error: ", error);
+                disconnect(); // Закрываем соединение при ошибке
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null; // Сбрасываем ws после закрытия
+            }
+            // UI обновляется через ws.onclose
+        }
+
+        function initAudio() {
+            try {
+                // Закрываем старый контекст, если он был
+                if (audioContext && audioContext.state !== 'closed') {
+                     audioContext.close();
+                }
+                 // Попытка указать частоту явно
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive', sampleRate: 44100 });
+                audioQueue = [];
+                isPlaying = false;
+                currentBufferDuration = 0; // Сброс длительности буфера
+                // Начинаем с небольшой задержкой, чтобы дать буферу наполниться
+                nextPlayTime = audioContext.currentTime + 0.1;
+                updateStatus('Audio context initialized.');
+
+                 // Возобновляем контекст, если он был приостановлен
+                 if (audioContext.state === 'suspended') {
+                     audioContext.resume().then(() => {
+                         console.log('AudioContext resumed on init.');
+                     });
+                 }
+
+            } catch (e) {
+                updateStatus('Error: Web Audio API not supported.', true);
+                console.error("Audio Context Error:", e);
+            }
+        }
+
+        function stopAudio() {
+             if (sourceNode) {
+                 try { sourceNode.stop(); } catch(e) {} // Останавливаем текущий источник
+                 sourceNode = null;
+             }
+            if (audioContext && audioContext.state !== 'closed') {
+                audioContext.close().then(() => console.log("Audio context closed."));
+                audioContext = null;
+            }
+            audioQueue = []; // Очищаем очередь
+            isPlaying = false;
+            currentBufferDuration = 0;
+        }
+
+        function enqueueAudio(arrayBuffer) {
+            if (!audioContext || audioContext.state === 'closed') {
+                 console.warn("Audio context not ready, skipping buffer.");
+                 return;
+             }
+
+             // Проверка на минимальный размер данных (на всякий случай)
+             if (arrayBuffer.byteLength < 2) {
+                 console.warn("Received empty or very small buffer, skipping.");
+                 return;
+             }
+
+            // --- Декодирование PCM 16-bit в Float32 ---
+            const int16Array = new Int16Array(arrayBuffer);
+            const float32Array = new Float32Array(int16Array.length);
+            for (let i = 0; i < int16Array.length; i++) {
+                float32Array[i] = int16Array[i] / 32768.0;
+            }
+
+            try {
+                // --- Создание аудио буфера ---
+                const audioBuffer = audioContext.createBuffer(
+                    1, // Моно
+                    float32Array.length, // Длина
+                    audioContext.sampleRate // Частота дискретизации (должна быть 44100)
+                );
+                // Копируем декодированные данные
+                audioBuffer.copyToChannel(float32Array, 0);
+
+                const bufferDuration = audioBuffer.duration;
+                audioQueue.push({ buffer: audioBuffer, duration: bufferDuration });
+                currentBufferDuration += bufferDuration; // Добавляем длительность к общему буферу
+
+                // Начинаем воспроизведение, если не идет И буфер достаточно наполнен
+                if (!isPlaying && currentBufferDuration >= bufferTargetDuration) {
+                    console.log(`Buffer filled (${currentBufferDuration.toFixed(3)}s), starting playback.`);
+                    playNextBuffer();
+                } else if (!isPlaying) {
+                     // console.log(`Buffering... ${currentBufferDuration.toFixed(3)}s / ${bufferTargetDuration}s`);
+                }
+            } catch (e) {
+                console.error("Error creating or processing audio buffer:", e);
+                updateStatus("Error processing audio buffer.", true);
+            }
+        }
+
+        function playNextBuffer() {
+             if (!audioContext || audioContext.state !== 'running') {
+                 // console.warn("Audio context not running, playback stopped.");
+                 isPlaying = false;
+                 if(audioContext && audioContext.state === 'suspended') {
+                     updateStatus("Audio context suspended. Click page to resume.");
+                 }
+                 return;
+             }
+
+            if (audioQueue.length === 0) {
+                isPlaying = false;
+                currentBufferDuration = 0; // Буфер опустел
+                console.log("Queue empty, waiting for data...");
+                return;
+            }
+
+            isPlaying = true;
+            const audioData = audioQueue.shift();
+            currentBufferDuration -= audioData.duration; // Уменьшаем длительность буфера
+
+            sourceNode = audioContext.createBufferSource();
+            sourceNode.buffer = audioData.buffer;
+            sourceNode.connect(audioContext.destination);
+
+            const currentTime = audioContext.currentTime;
+            // Если запланированное время уже сильно в прошлом, стартуем немедленно + небольшая задержка
+            const realisticStartTime = Math.max(currentTime, nextPlayTime);
+            // console.log(`Play scheduled: ${realisticStartTime.toFixed(3)}, Current: ${currentTime.toFixed(3)}, Next: ${nextPlayTime.toFixed(3)}`);
+
+            try {
+                sourceNode.start(realisticStartTime);
+            } catch (e) {
+                 console.error("Error starting source node:", e);
+                 // Попытка стартовать немедленно, если планирование не удалось
+                 try { sourceNode.start(currentTime); nextPlayTime = currentTime + audioData.duration; } catch(e2) {console.error("Immediate start failed too:", e2);}
+            }
+
+            // Планируем время начала следующего чанка
+            nextPlayTime = realisticStartTime + audioData.duration;
+
+            sourceNode.onended = () => {
+                sourceNode = null; // Очищаем ссылку на завершенный узел
+                // Запускаем следующий буфер СРАЗУ ЖЕ, без setTimeout
+                 playNextBuffer();
+            };
+        }
+
+         // Пытаемся разблокировать AudioContext при первом клике (для Chrome/Safari)
+         document.body.addEventListener('click', () => {
+             if (audioContext && audioContext.state === 'suspended') {
+                 audioContext.resume().then(() => {
+                     console.log('AudioContext resumed successfully.');
+                     updateStatus("Audio context resumed. Try connecting again.");
+                 });
+             }
+         }, { once: true });
+
+    </script>
+</body>
+</html>
