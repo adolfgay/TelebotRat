@@ -2,3 +2,5 @@
 мне 14 кста, хз ваще как гитом пользоваться
 websocketMain и websocket_audio_client.html ии, это все на сервер,  я replit использовал
 говнокод 
+ваще нахуй на telebot писал, aiogram>
+ну мне лень asyncio учить
