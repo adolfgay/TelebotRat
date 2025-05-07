@@ -4,3 +4,4 @@ websocketMain и websocket_audio_client.html ии, это все на серве
 говнокод 
 ваще нахуй на telebot писал, aiogram>
 ну мне лень asyncio учить
+30 фервраля перепишу все на 1с, кумир и паскаль 
