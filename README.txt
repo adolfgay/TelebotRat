@@ -1,12 +1,12 @@
 функционал:
 * Создание скриншота
 * Получение информации о системе
-* Выключение компьютера
+* Выключение компьютера 
 * Управление мышью
 * Открытие веб-сайтов
 * Запуск программ
 * Отправка сообщений
-* Отправка файлов
+* Отправка файлов на пк 
 * Отключение диспетчера задач
 * Включение диспетчера задач
 * Управление клавиатурой
@@ -26,6 +26,35 @@
 * Вызов синего экрана смерти (BSOD)
 * Начало аудиопотока
 * Остановка аудиопотока
+
+Functionality:
+* Screenshot creation
+* Getting information about the system
+* Turning off the computer
+* Mouse control
+* Opening websites
+* Launching programs
+* Sending messages
+* Sending files to pc
+* Disabling the Task Manager
+* Enabling the Task Manager
+* Keyboard control
+* Executing PowerShell commands
+* Getting files from a pc
+* Disabling the Registry Editor
+* Enabling the Registry editor
+* Disabling the command prompt (CMD)
+* Enabling the command prompt (CMD)
+* Disabling the control panel
+* Turning on the control panel
+* Disabling the "Run" menu
+* Enabling the "Run" menu
+* Disabling disk display
+* Enabling disk display
+* Playback of the screamer
+* Call Blue Screen of Death (BSOD) 
+* Audio stream start
+* Stop the audio stream
 
 
 
